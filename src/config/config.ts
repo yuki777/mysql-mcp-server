@@ -264,6 +264,8 @@ export class ConfigManager {
    * @param args コマンドライン引数
    */
   public applyCommandLineArgs(args: Record<string, any>): void {
+    // autoConnect オプションは ConfigManager では保持しない
+    // (MCPServerの初期化時に使用するだけ)
     // サーバー設定
     if (args.port) {
       this.config.server.port = args.port;
@@ -341,5 +343,16 @@ export class ConfigManager {
    */
   public getStoredConnections(): StoredConnection[] {
     return this.connections;
+  }
+
+  /**
+   * MySQL設定を更新
+   * @param config 新しいMySQL設定
+   */
+  public updateMySQLConfig(config: Partial<MySQLConfig>): void {
+    this.config.mysql = {
+      ...this.config.mysql,
+      ...config
+    };
   }
 }

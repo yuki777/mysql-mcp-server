@@ -21,11 +21,49 @@ export class MySQLConnection {
   }
 
   /**
-   * MySQL接続プールを初期化
+   * 接続設定を更新する
+   * @param config 新しい接続設定
    */
-  public async initialize(): Promise<void> {
+  public updateConfig(config: Partial<MySQLConfig>): void {
+    this.config = { ...this.config, ...config };
+  }
+
+  /**
+   * クエリタイムアウト設定を更新する
+   * @param timeout 新しいタイムアウト（ミリ秒）
+   */
+  public updateQueryTimeout(timeout: number): void {
+    this.queryTimeout = timeout;
+  }
+
+  /**
+   * 現在の接続設定を取得する
+   * @returns 現在の接続設定
+   */
+  public getConfig(): MySQLConfig {
+    return { ...this.config };
+  }
+
+  /**
+   * MySQL接続プールを初期化
+   * @param forceConnect 強制的に接続を試みるかどうか
+   */
+  public async initialize(forceConnect: boolean = true): Promise<void> {
     try {
       if (this.pool) {
+        return;
+      }
+
+      // 接続情報が十分でない場合は初期化のみ行い、接続は行わない
+      const requiredFields = ['host', 'port', 'user'];
+      const hasRequiredFields = requiredFields.every(field => 
+        this.config[field as keyof MySQLConfig] !== undefined && 
+        this.config[field as keyof MySQLConfig] !== null && 
+        this.config[field as keyof MySQLConfig] !== ''
+      );
+
+      if (!forceConnect || !hasRequiredFields) {
+        console.log('MySQL connection initialized but not connected');
         return;
       }
 
@@ -50,9 +88,22 @@ export class MySQLConnection {
       console.log(`MySQL connection established to ${this.config.host}:${this.config.port}`);
     } catch (error) {
       this.isConnected = false;
+      this.pool = null;
       console.error('Failed to initialize MySQL connection pool:', error);
       throw new Error(`MySQL connection failed: ${(error as Error).message}`);
     }
+  }
+
+  /**
+   * 現在の設定でデータベースに接続する
+   * 既に接続が確立されている場合は一度閉じて再接続する
+   */
+  public async connect(): Promise<void> {
+    // 既存の接続を閉じる
+    await this.close();
+    
+    // 新しい接続を確立
+    await this.initialize(true);
   }
 
   /**
@@ -61,6 +112,21 @@ export class MySQLConnection {
    */
   public isConnectedToDatabase(): boolean {
     return this.isConnected;
+  }
+  
+  /**
+   * 接続情報の詳細を取得
+   * @returns 接続情報の詳細
+   */
+  public getConnectionInfo(): Record<string, any> {
+    return {
+      isConnected: this.isConnected,
+      host: this.config.host,
+      port: this.config.port,
+      user: this.config.user,
+      database: this.config.database,
+      // パスワードはセキュリティ上の理由で含めない
+    };
   }
 
   /**
@@ -87,12 +153,8 @@ export class MySQLConnection {
    * @returns クエリ結果
    */
   public async executeQuery(sql: string, params: any[] = []): Promise<QueryResult> {
-    if (!this.pool) {
-      await this.initialize();
-    }
-
-    if (!this.pool) {
-      throw new Error('Connection pool not initialized');
+    if (!this.isConnected || !this.pool) {
+      throw new Error('Database not connected. Please connect to a database first.');
     }
 
     const conn = await this.pool.getConnection();

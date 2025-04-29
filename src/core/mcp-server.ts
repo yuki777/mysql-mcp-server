@@ -1,4 +1,4 @@
-import { MCPServerDefinition, MCPToolDefinition, MCPResourceDefinition, MCPToolRequest, MCPToolResponse } from './types';
+import { MCPServerDefinition, MCPToolDefinition, MCPResourceDefinition, MCPToolRequest, MCPToolResponse, MySQLConfig } from './types';
 import { ConfigManager } from '../config/config';
 import { MySQLConnection } from '../mysql/connection';
 
@@ -38,15 +38,18 @@ export class MCPServer {
 
   /**
    * サーバーを初期化
+   * @param autoConnect 自動的にデータベースに接続するかどうか
    */
-  public async initialize(): Promise<void> {
+  public async initialize(autoConnect: boolean = false): Promise<void> {
     try {
-      // MySQL 接続の初期化
-      await this.mysqlConnection.initialize();
+      // MySQLコネクションを初期化（接続は行わない）
+      await this.mysqlConnection.initialize(autoConnect);
       console.error('MySQL MCP Server initialized');
 
-      // 接続情報を保存
-      this.configManager.saveCurrentConnection();
+      if (autoConnect && this.mysqlConnection.isConnectedToDatabase()) {
+        // 接続成功時は設定を保存
+        this.configManager.saveCurrentConnection();
+      }
     } catch (error) {
       console.error('Failed to initialize MCP Server:', error);
       throw error;
@@ -57,6 +60,61 @@ export class MCPServer {
    * ツールとリソースを登録
    */
   private registerTools(): void {
+    // -- データベース接続管理ツール --
+
+    // connect_database ツール
+    this.registerTool({
+      name: 'connect_database',
+      description: 'データベースに接続します',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          host: {
+            type: 'string',
+            description: 'MySQLホスト'
+          },
+          port: {
+            type: 'number',
+            description: 'MySQLポート'
+          },
+          user: {
+            type: 'string',
+            description: 'MySQLユーザー'
+          },
+          password: {
+            type: 'string',
+            description: 'MySQLパスワード'
+          },
+          database: {
+            type: 'string',
+            description: 'データベース名（オプション）'
+          }
+        },
+        required: ['host', 'port', 'user']
+      }
+    }, this.connectDatabase.bind(this));
+
+    // disconnect_database ツール
+    this.registerTool({
+      name: 'disconnect_database',
+      description: '現在のデータベース接続を切断します',
+      inputSchema: {
+        type: 'object',
+        properties: {}
+      }
+    }, this.disconnectDatabase.bind(this));
+
+    // get_connection_status ツール
+    this.registerTool({
+      name: 'get_connection_status',
+      description: 'データベース接続の状態を取得します',
+      inputSchema: {
+        type: 'object',
+        properties: {}
+      }
+    }, this.getConnectionStatus.bind(this));
+
+    // -- SQLクエリ関連ツール --
     // execute_query ツール
     this.registerTool({
       name: 'execute_query',
@@ -177,6 +235,11 @@ export class MCPServer {
    */
   private async executeQuery(args: Record<string, any>): Promise<any> {
     try {
+      // 接続状態のチェック
+      if (!this.mysqlConnection.isConnectedToDatabase()) {
+        throw new Error('Database not connected. Please use connect_database tool first.');
+      }
+
       const { query, params = [] } = args as { query: string; params?: any[] };
       
       if (!query || query.trim() === '') {
@@ -212,6 +275,11 @@ export class MCPServer {
    */
   private async getDatabases(): Promise<any> {
     try {
+      // 接続状態のチェック
+      if (!this.mysqlConnection.isConnectedToDatabase()) {
+        throw new Error('Database not connected. Please use connect_database tool first.');
+      }
+
       const result = await this.mysqlConnection.executeQuery('SHOW DATABASES');
       return {
         databases: result.data.map((row: any) => row.Database)
@@ -227,6 +295,11 @@ export class MCPServer {
    */
   private async getTables(args: Record<string, any>): Promise<any> {
     try {
+      // 接続状態のチェック
+      if (!this.mysqlConnection.isConnectedToDatabase()) {
+        throw new Error('Database not connected. Please use connect_database tool first.');
+      }
+
       const { database } = args as { database?: string };
       let query = 'SHOW TABLES';
       
@@ -255,6 +328,11 @@ export class MCPServer {
    */
   private async describeTable(args: Record<string, any>): Promise<any> {
     try {
+      // 接続状態のチェック
+      if (!this.mysqlConnection.isConnectedToDatabase()) {
+        throw new Error('Database not connected. Please use connect_database tool first.');
+      }
+
       const { table, database } = args as { table: string; database?: string };
       let tableReference = table;
       
@@ -302,6 +380,76 @@ export class MCPServer {
     } catch (error) {
       throw new Error(`Failed to describe table: ${(error as Error).message}`);
     }
+  }
+
+  /**
+   * データベース接続ツール
+   * @param args 接続引数
+   */
+  private async connectDatabase(args: Record<string, any>): Promise<any> {
+    try {
+      const { host, port, user, password, database } = args as {
+        host: string;
+        port: number;
+        user: string;
+        password?: string;
+        database?: string;
+      };
+      
+      // 現在の接続があれば切断
+      if (this.mysqlConnection.isConnectedToDatabase()) {
+        await this.mysqlConnection.close();
+      }
+      
+      // 新しい接続設定を適用
+      const newConfig: MySQLConfig = {
+        host,
+        port,
+        user,
+        password: password || '',
+        database,
+      };
+      
+      this.mysqlConnection.updateConfig(newConfig);
+      this.configManager.updateMySQLConfig(newConfig);
+      
+      // 接続実行
+      await this.mysqlConnection.connect();
+      
+      // 接続情報を保存
+      this.configManager.saveCurrentConnection();
+      
+      return {
+        success: true,
+        connection: this.mysqlConnection.getConnectionInfo()
+      };
+    } catch (error) {
+      console.error('Failed to connect to database:', error);
+      throw new Error(`Database connection failed: ${(error as Error).message}`);
+    }
+  }
+  
+  /**
+   * データベース切断ツール
+   */
+  private async disconnectDatabase(): Promise<any> {
+    await this.mysqlConnection.close();
+    return {
+      success: true,
+      message: 'Database disconnected'
+    };
+  }
+  
+  /**
+   * 接続状態取得ツール
+   */
+  private async getConnectionStatus(): Promise<any> {
+    return {
+      isConnected: this.mysqlConnection.isConnectedToDatabase(),
+      connectionInfo: this.mysqlConnection.isConnectedToDatabase()
+        ? this.mysqlConnection.getConnectionInfo()
+        : null
+    };
   }
 
   /**

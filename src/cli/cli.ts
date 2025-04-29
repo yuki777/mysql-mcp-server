@@ -26,6 +26,7 @@ async function main() {
     .option('--password <password>', 'MySQLパスワード', '')
     .option('-d, --database <database>', 'デフォルトデータベース')
     .option('-c, --config <path>', '設定ファイルパス')
+    .option('--auto-connect', 'サーバー起動時に自動的にデータベースに接続', false)
     .option('--server-port <port>', 'MCPサーバーポート（stdioモードでは使用されません）', '3000')
     .option('--server-host <host>', 'MCPサーバーホスト（stdioモードでは使用されません）', 'localhost')
     .option('--query-timeout <ms>', 'クエリタイムアウト(ミリ秒)', '30000')
@@ -50,22 +51,28 @@ async function main() {
       host: options.serverHost,
       queryTimeout: parseInt(options.queryTimeout, 10),
       maxResultSize: parseInt(options.maxResults, 10),
-      debug: options.debug
+      debug: options.debug,
+      autoConnect: options.autoConnect
     };
 
     configManager.applyCommandLineArgs(cliConfig);
 
     const mcpServer = new MCPServer(configManager);
     
-    // SQLによる接続確認メッセージ
     console.error('MySQL MCP Serverを起動しています...');
-    console.error(`ホスト: ${configManager.getMySQLConfig().host}:${configManager.getMySQLConfig().port}`);
-    if (configManager.getMySQLConfig().database) {
-      console.error(`データベース: ${configManager.getMySQLConfig().database}`);
+    
+    // 接続情報の表示
+    if (options.autoConnect) {
+      console.error(`自動接続: ${configManager.getMySQLConfig().host}:${configManager.getMySQLConfig().port}`);
+      if (configManager.getMySQLConfig().database) {
+        console.error(`データベース: ${configManager.getMySQLConfig().database}`);
+      }
+    } else {
+      console.error('自動接続: オフ (connect_database ツールを使用して接続してください)');
     }
     
-    // MCPサーバーを初期化
-    await mcpServer.initialize();
+    // MCPサーバーを初期化（autoConnectフラグに基づいて接続の有無を決定）
+    await mcpServer.initialize(options.autoConnect);
 
     // stdio mode で MCPサーバーを起動
     await startStdioMCPServer(mcpServer);
