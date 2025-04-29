@@ -148,18 +148,16 @@ export class ConfigManager {
       const existingIndex = this.connections.findIndex(conn => 
         conn.host === currentConnection.host && 
         conn.port === currentConnection.port && 
-        conn.user === currentConnection.user
+        conn.user === currentConnection.user && 
+        conn.password === currentConnection.password && 
+        conn.database === currentConnection.database
       );
 
       // 既存の接続情報を更新または新規追加
       if (existingIndex >= 0) {
         this.connections[existingIndex] = currentConnection;
       } else {
-        // 新しい接続情報を追加（上限10件）
         this.connections.push(currentConnection);
-        if (this.connections.length > 10) {
-          this.connections.shift(); // 最も古い接続情報を削除
-        }
       }
 
       // ファイルに保存
