@@ -54,6 +54,15 @@ export interface MySQLConfig {
   charset?: string;
 }
 
+// 保存された接続情報の型定義
+export interface StoredConnection {
+  host: string;
+  port: number;
+  user: string;
+  password: string;
+  database?: string;
+}
+
 export interface QueryResult {
   data: any[];
   fields?: any[];

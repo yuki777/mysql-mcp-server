@@ -43,7 +43,10 @@ export class MCPServer {
     try {
       // MySQL 接続の初期化
       await this.mysqlConnection.initialize();
-      console.log('MySQL MCP Server initialized');
+      console.error('MySQL MCP Server initialized');
+
+      // 接続情報を保存
+      this.configManager.saveCurrentConnection();
     } catch (error) {
       console.error('Failed to initialize MCP Server:', error);
       throw error;

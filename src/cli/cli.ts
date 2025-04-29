@@ -3,7 +3,7 @@
 import { program } from 'commander';
 import { ConfigManager } from '../config/config';
 import { MCPServer } from '../core/mcp-server';
-import { startMCPServer } from './utils/server-utils';
+import { startStdioMCPServer } from '../utils/stdio-server-utils';
 import fs from 'fs';
 import path from 'path';
 
@@ -26,8 +26,8 @@ async function main() {
     .option('--password <password>', 'MySQLパスワード', '')
     .option('-d, --database <database>', 'デフォルトデータベース')
     .option('-c, --config <path>', '設定ファイルパス')
-    .option('--server-port <port>', 'MCPサーバーポート', '3000')
-    .option('--server-host <host>', 'MCPサーバーホスト', 'localhost')
+    .option('--server-port <port>', 'MCPサーバーポート（stdioモードでは使用されません）', '3000')
+    .option('--server-host <host>', 'MCPサーバーホスト（stdioモードでは使用されません）', 'localhost')
     .option('--query-timeout <ms>', 'クエリタイムアウト(ミリ秒)', '30000')
     .option('--max-results <count>', '最大結果行数', '1000')
     .option('--debug', 'デバッグモード');
@@ -58,30 +58,27 @@ async function main() {
     const mcpServer = new MCPServer(configManager);
     
     // SQLによる接続確認メッセージ
-    console.log('MySQL MCP Serverを起動しています...');
-    console.log(`ホスト: ${configManager.getMySQLConfig().host}:${configManager.getMySQLConfig().port}`);
+    console.error('MySQL MCP Serverを起動しています...');
+    console.error(`ホスト: ${configManager.getMySQLConfig().host}:${configManager.getMySQLConfig().port}`);
     if (configManager.getMySQLConfig().database) {
-      console.log(`データベース: ${configManager.getMySQLConfig().database}`);
+      console.error(`データベース: ${configManager.getMySQLConfig().database}`);
     }
     
     // MCPサーバーを初期化
     await mcpServer.initialize();
 
-    // MCPサーバーを起動
-    const serverConfig = configManager.getConfig().server;
-    await startMCPServer(mcpServer, serverConfig.port, serverConfig.host);
-    
-    console.log(`MySQL MCP Serverが起動しました。http://${serverConfig.host}:${serverConfig.port}/ で接続できます。`);
+    // stdio mode で MCPサーバーを起動
+    await startStdioMCPServer(mcpServer);
     
     // 終了シグナルを処理
     process.on('SIGINT', async () => {
-      console.log('MySQLサーバー接続を終了しています...');
+      console.error('MySQLサーバー接続を終了しています...');
       await mcpServer.close();
       process.exit(0);
     });
 
     process.on('SIGTERM', async () => {
-      console.log('MySQLサーバー接続を終了しています...');
+      console.error('MySQLサーバー接続を終了しています...');
       await mcpServer.close();
       process.exit(0);
     });

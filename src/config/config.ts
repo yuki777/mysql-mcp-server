@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
-import { AppConfig, MySQLConfig } from '../core/types';
+import { AppConfig, MySQLConfig, StoredConnection } from '../core/types';
+import { CONFIG_FILES, DEFAULT_VALUES, ENV_VARS } from './constants';
 
 /**
  * アプリケーション設定を管理するクラス
@@ -8,25 +9,27 @@ import { AppConfig, MySQLConfig } from '../core/types';
 export class ConfigManager {
   private config: AppConfig;
   private configFilePath?: string;
+  private connections: StoredConnection[] = [];
+  private connectionsFilePath: string;
 
   /**
    * デフォルト設定
    */
   private static readonly DEFAULT_CONFIG: AppConfig = {
     server: {
-      port: 3000,
+      port: DEFAULT_VALUES.SERVER_PORT,
       host: 'localhost'
     },
     mysql: {
       host: 'localhost',
-      port: 3306,
+      port: 13306,
       user: 'root',
       password: '',
       database: undefined
     },
     debug: false,
-    queryTimeout: 30000,
-    maxResultSize: 1000
+    queryTimeout: DEFAULT_VALUES.QUERY_TIMEOUT,
+    maxResultSize: DEFAULT_VALUES.MAX_RESULT_SIZE
   };
 
   /**
@@ -36,6 +39,9 @@ export class ConfigManager {
   constructor(configPath?: string) {
     this.config = { ...ConfigManager.DEFAULT_CONFIG };
     this.configFilePath = configPath;
+    
+    // 接続情報ファイルのパスを設定
+    this.connectionsFilePath = this.getConnectionsFilePath();
     
     // 設定の初期化
     this.initializeConfig();
@@ -50,8 +56,24 @@ export class ConfigManager {
     // 2. 設定ファイルがある場合は読み込み
     this.loadConfigFile();
 
-    // 3. 環境変数から設定を上書き
+    // 3. 保存された接続情報があれば読み込み
+    this.loadStoredConnections();
+
+    // 4. 環境変数から設定を上書き
     this.loadFromEnvironment();
+  }
+
+  /**
+   * 接続情報ファイルのパスを取得
+   */
+  private getConnectionsFilePath(): string {
+    // ホームディレクトリを使用
+    if (process.env.HOME) {
+      return path.resolve(process.env.HOME, CONFIG_FILES.CONNECTIONS);
+    }
+    
+    // ホームディレクトリが取得できない場合は現在のディレクトリ
+    return path.resolve(process.cwd(), CONFIG_FILES.CONNECTIONS);
   }
 
   /**
@@ -64,12 +86,12 @@ export class ConfigManager {
       // 設定ファイルパスが指定されていない場合は、デフォルトの場所を探す
       if (!configPath) {
         // カレントディレクトリ
-        if (fs.existsSync(path.resolve(process.cwd(), 'mysql-mcp-config.json'))) {
-          configPath = path.resolve(process.cwd(), 'mysql-mcp-config.json');
+        if (fs.existsSync(path.resolve(process.cwd(), CONFIG_FILES.ROOT))) {
+          configPath = path.resolve(process.cwd(), CONFIG_FILES.ROOT);
         } 
         // ホームディレクトリ
-        else if (process.env.HOME && fs.existsSync(path.resolve(process.env.HOME, '.mysql-mcp-config.json'))) {
-          configPath = path.resolve(process.env.HOME, '.mysql-mcp-config.json');
+        else if (process.env.HOME && fs.existsSync(path.resolve(process.env.HOME, CONFIG_FILES.HOME))) {
+          configPath = path.resolve(process.env.HOME, CONFIG_FILES.HOME);
         }
       }
 
@@ -80,10 +102,71 @@ export class ConfigManager {
         // 設定をマージ
         this.mergeConfig(fileConfig);
         
-        console.log(`Loaded config from: ${configPath}`);
+        console.error(`設定ファイルを読み込みました: ${configPath}`);
       }
     } catch (error) {
-      console.error('Error loading config file:', error);
+      console.error('設定ファイルの読み込みエラー:', error);
+    }
+  }
+
+  /**
+   * 保存された接続情報を読み込み
+   */
+  private loadStoredConnections(): void {
+    try {
+      if (fs.existsSync(this.connectionsFilePath)) {
+        const connectionsData = fs.readFileSync(this.connectionsFilePath, 'utf8');
+        this.connections = JSON.parse(connectionsData);
+        
+        // 最後の接続情報を現在の設定として適用（存在する場合）
+        if (this.connections.length > 0) {
+          const lastConnection = this.connections[this.connections.length - 1];
+          this.config.mysql = { ...this.config.mysql, ...lastConnection };
+          console.error(`前回の接続情報を読み込みました: ${lastConnection.host}:${lastConnection.port}`);
+        }
+      }
+    } catch (error) {
+      console.error('接続情報の読み込みエラー:', error);
+    }
+  }
+
+  /**
+   * 現在の接続情報を保存
+   */
+  public saveCurrentConnection(): void {
+    try {
+      // 現在の接続情報を取得
+      const currentConnection: StoredConnection = {
+        host: this.config.mysql.host,
+        port: this.config.mysql.port,
+        user: this.config.mysql.user,
+        password: this.config.mysql.password,
+        database: this.config.mysql.database
+      };
+
+      // 同一の接続情報が既に存在するか確認
+      const existingIndex = this.connections.findIndex(conn => 
+        conn.host === currentConnection.host && 
+        conn.port === currentConnection.port && 
+        conn.user === currentConnection.user
+      );
+
+      // 既存の接続情報を更新または新規追加
+      if (existingIndex >= 0) {
+        this.connections[existingIndex] = currentConnection;
+      } else {
+        // 新しい接続情報を追加（上限10件）
+        this.connections.push(currentConnection);
+        if (this.connections.length > 10) {
+          this.connections.shift(); // 最も古い接続情報を削除
+        }
+      }
+
+      // ファイルに保存
+      fs.writeFileSync(this.connectionsFilePath, JSON.stringify(this.connections, null, 2));
+      console.error(`接続情報を保存しました: ${this.connectionsFilePath}`);
+    } catch (error) {
+      console.error('接続情報の保存エラー:', error);
     }
   }
 
@@ -92,39 +175,56 @@ export class ConfigManager {
    */
   private loadFromEnvironment(): void {
     // サーバー設定
-    if (process.env.MCP_SERVER_PORT) {
-      this.config.server.port = parseInt(process.env.MCP_SERVER_PORT, 10);
+    const serverPort = process.env[ENV_VARS.MCP_SERVER_PORT];
+    if (serverPort) {
+      this.config.server.port = parseInt(serverPort, 10);
     }
-    if (process.env.MCP_SERVER_HOST) {
-      this.config.server.host = process.env.MCP_SERVER_HOST;
+    
+    const serverHost = process.env[ENV_VARS.MCP_SERVER_HOST];
+    if (serverHost) {
+      this.config.server.host = serverHost;
     }
 
     // MySQL設定
-    if (process.env.DB_HOST) {
-      this.config.mysql.host = process.env.DB_HOST;
+    const dbHost = process.env[ENV_VARS.DB_HOST];
+    if (dbHost) {
+      this.config.mysql.host = dbHost;
     }
-    if (process.env.DB_PORT) {
-      this.config.mysql.port = parseInt(process.env.DB_PORT, 10);
+    
+    const dbPort = process.env[ENV_VARS.DB_PORT];
+    if (dbPort) {
+      this.config.mysql.port = parseInt(dbPort, 10);
     }
-    if (process.env.DB_USER) {
-      this.config.mysql.user = process.env.DB_USER;
+    
+    const dbUser = process.env[ENV_VARS.DB_USER];
+    if (dbUser) {
+      this.config.mysql.user = dbUser;
     }
-    if (process.env.DB_PASSWORD) {
-      this.config.mysql.password = process.env.DB_PASSWORD;
+    
+    const dbPassword = process.env[ENV_VARS.DB_PASSWORD];
+    if (dbPassword) {
+      this.config.mysql.password = dbPassword;
     }
-    if (process.env.DB_DATABASE) {
-      this.config.mysql.database = process.env.DB_DATABASE;
+    
+    const dbDatabase = process.env[ENV_VARS.DB_DATABASE];
+    if (dbDatabase) {
+      this.config.mysql.database = dbDatabase;
     }
 
     // その他の設定
-    if (process.env.DEBUG && ['true', '1', 'yes'].includes(process.env.DEBUG.toLowerCase())) {
+    const debugValue = process.env[ENV_VARS.DEBUG];
+    if (debugValue && ['true', '1', 'yes'].includes(debugValue.toLowerCase())) {
       this.config.debug = true;
     }
-    if (process.env.QUERY_TIMEOUT) {
-      this.config.queryTimeout = parseInt(process.env.QUERY_TIMEOUT, 10);
+    
+    const timeoutValue = process.env[ENV_VARS.QUERY_TIMEOUT];
+    if (timeoutValue) {
+      this.config.queryTimeout = parseInt(timeoutValue, 10);
     }
-    if (process.env.MAX_RESULT_SIZE) {
-      this.config.maxResultSize = parseInt(process.env.MAX_RESULT_SIZE, 10);
+    
+    const resultSizeValue = process.env[ENV_VARS.MAX_RESULT_SIZE];
+    if (resultSizeValue) {
+      this.config.maxResultSize = parseInt(resultSizeValue, 10);
     }
   }
 
@@ -221,14 +321,14 @@ export class ConfigManager {
    * クエリタイムアウト設定を取得
    */
   public getQueryTimeout(): number {
-    return this.config.queryTimeout || 30000;
+    return this.config.queryTimeout || DEFAULT_VALUES.QUERY_TIMEOUT;
   }
 
   /**
    * 最大結果サイズ設定を取得
    */
   public getMaxResultSize(): number {
-    return this.config.maxResultSize || 1000;
+    return this.config.maxResultSize || DEFAULT_VALUES.MAX_RESULT_SIZE;
   }
 
   /**
@@ -236,5 +336,12 @@ export class ConfigManager {
    */
   public isDebugMode(): boolean {
     return this.config.debug;
+  }
+
+  /**
+   * 保存済み接続情報の一覧を取得
+   */
+  public getStoredConnections(): StoredConnection[] {
+    return this.connections;
   }
 }
