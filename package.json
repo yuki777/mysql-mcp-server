@@ -1,0 +1,50 @@
+{
+  "name": "mysql-mcp-server",
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "mysql-mcp-server": "dist/cli/cli.js"
+  },
+  "scripts": {
+    "build": "tsc && chmod +x dist/cli/cli.js",
+    "start": "node dist/cli/cli.js",
+    "dev": "nodemon --watch src --exec ts-node src/cli/cli.ts",
+    "prepublishOnly": "npm run build",
+    "prepare": "npm run build",
+    "postinstall": "npm run build"
+  },
+  "keywords": [
+    "mysql",
+    "mcp",
+    "model-context-protocol",
+    "database",
+    "sql"
+  ],
+  "author": "",
+  "license": "ISC",
+  "description": "MySQL Model Context Protocol (MCP) Server for executing SQL queries",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "dependencies": {
+    "@types/node": "^22.15.3",
+    "body-parser": "^2.2.0",
+    "commander": "^13.1.0",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "mysql2": "^3.14.1",
+    "nodemon": "^3.1.10",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3"
+  },
+  "devDependencies": {
+    "@types/body-parser": "^1.19.5",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.1"
+  }
+}
