@@ -20,7 +20,7 @@ MySQL Model Context Protocol（MCP）サーバーは、ローカル環境のMySQ
 ### NPXでの一時実行
 
 ```bash
-npx -y https://github.com/yuki777/mysql-mcp-server --host localhost --port 13306 --user root --password yourpassword --database mydb
+npx -y https://github.com/yuki777/mysql-mcp-server --host 127.0.0.1 --port 13306 --user root --database mysql
 ```
 
 ### オプション

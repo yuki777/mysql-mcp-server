@@ -10,9 +10,7 @@
     "build": "tsc && chmod +x dist/cli/cli.js",
     "start": "node dist/cli/cli.js",
     "dev": "nodemon --watch src --exec ts-node src/cli/cli.ts",
-    "prepublishOnly": "npm run build",
-    "prepare": "npm run build",
-    "postinstall": "npm run build"
+    "prepare": "npm run build"
   },
   "keywords": [
     "mysql",
@@ -38,13 +36,13 @@
     "cors": "^2.8.5",
     "express": "^5.1.0",
     "mysql2": "^3.14.1",
-    "nodemon": "^3.1.10",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.8.3"
+    "typescript": "^5.0.0"
   },
   "devDependencies": {
     "@types/body-parser": "^1.19.5",
     "@types/cors": "^2.8.17",
-    "@types/express": "^5.0.1"
+    "@types/express": "^5.0.1",
+    "nodemon": "^3.1.10",
+    "ts-node": "^10.9.2"
   }
 }
