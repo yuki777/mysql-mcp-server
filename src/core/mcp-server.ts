@@ -1,4 +1,4 @@
-import { MCPServerDefinition, MCPToolDefinition, MCPResourceDefinition, MCPToolRequest, MCPToolResponse, MySQLConfig } from './types';
+import { MCPServerDefinition, MCPToolDefinition, MCPResourceDefinition, MCPToolRequest, MCPToolResponse, MySQLConfig, NamedStoredConnection } from './types';
 import { ConfigManager } from '../config/config';
 import { MySQLConnection } from '../mysql/connection';
 
@@ -88,11 +88,31 @@ export class MCPServer {
           database: {
             type: 'string',
             description: 'データベース名（オプション）'
+          },
+          profileName: {
+            type: 'string',
+            description: '接続プロファイル名（オプション）。接続後、この名前で保存されます'
           }
         },
         required: ['host', 'port', 'user']
       }
     }, this.connectDatabase.bind(this));
+    
+    // connect_by_profile ツール
+    this.registerTool({
+      name: 'connect_by_profile',
+      description: '保存済み接続プロファイルを使用してデータベースに接続します',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          profileName: {
+            type: 'string',
+            description: '接続プロファイル名'
+          }
+        },
+        required: ['profileName']
+      }
+    }, this.connectByProfile.bind(this));
 
     // disconnect_database ツール
     this.registerTool({
@@ -113,6 +133,84 @@ export class MCPServer {
         properties: {}
       }
     }, this.getConnectionStatus.bind(this));
+    
+    // list_profiles ツール
+    this.registerTool({
+      name: 'list_profiles',
+      description: '保存済みの接続プロファイル一覧を取得します',
+      inputSchema: {
+        type: 'object',
+        properties: {}
+      }
+    }, this.listProfiles.bind(this));
+    
+    // get_profile ツール
+    this.registerTool({
+      name: 'get_profile',
+      description: '指定した名前の接続プロファイルの詳細を取得します',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          profileName: {
+            type: 'string',
+            description: 'プロファイル名'
+          }
+        },
+        required: ['profileName']
+      }
+    }, this.getProfile.bind(this));
+    
+    // add_profile ツール
+    this.registerTool({
+      name: 'add_profile',
+      description: '新しい接続プロファイルを追加または更新します',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          profileName: {
+            type: 'string',
+            description: 'プロファイル名'
+          },
+          host: {
+            type: 'string',
+            description: 'MySQLホスト'
+          },
+          port: {
+            type: 'number',
+            description: 'MySQLポート'
+          },
+          user: {
+            type: 'string',
+            description: 'MySQLユーザー'
+          },
+          password: {
+            type: 'string',
+            description: 'MySQLパスワード'
+          },
+          database: {
+            type: 'string',
+            description: 'データベース名（オプション）'
+          }
+        },
+        required: ['profileName', 'host', 'port', 'user']
+      }
+    }, this.addProfile.bind(this));
+    
+    // remove_profile ツール
+    this.registerTool({
+      name: 'remove_profile',
+      description: '指定した名前の接続プロファイルを削除します',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          profileName: {
+            type: 'string',
+            description: 'プロファイル名'
+          }
+        },
+        required: ['profileName']
+      }
+    }, this.removeProfile.bind(this));
 
     // -- SQLクエリ関連ツール --
     // execute_query ツール
@@ -388,12 +486,13 @@ export class MCPServer {
    */
   private async connectDatabase(args: Record<string, any>): Promise<any> {
     try {
-      const { host, port, user, password, database } = args as {
+      const { host, port, user, password, database, profileName } = args as {
         host: string;
         port: number;
         user: string;
         password?: string;
         database?: string;
+        profileName?: string;
       };
       
       // 現在の接続があれば切断
@@ -416,16 +515,62 @@ export class MCPServer {
       // 接続実行
       await this.mysqlConnection.connect();
       
-      // 接続情報を保存
-      this.configManager.saveCurrentConnection();
+      // 接続情報を保存（プロファイル名付き）
+      const savedProfileName = this.configManager.saveCurrentConnection(profileName);
       
       return {
         success: true,
-        connection: this.mysqlConnection.getConnectionInfo()
+        connection: this.mysqlConnection.getConnectionInfo(),
+        profileName: savedProfileName
       };
     } catch (error) {
       console.error('Failed to connect to database:', error);
       throw new Error(`Database connection failed: ${(error as Error).message}`);
+    }
+  }
+  
+  /**
+   * プロファイル名による接続ツール
+   * @param args 引数
+   */
+  private async connectByProfile(args: Record<string, any>): Promise<any> {
+    try {
+      const { profileName } = args as { profileName: string };
+      
+      // プロファイルの取得
+      const profile = this.configManager.getProfile(profileName);
+      if (!profile) {
+        throw new Error(`プロファイル "${profileName}" が見つかりません`);
+      }
+      
+      // 現在の接続があれば切断
+      if (this.mysqlConnection.isConnectedToDatabase()) {
+        await this.mysqlConnection.close();
+      }
+      
+      // プロファイルの接続設定を適用
+      const newConfig: MySQLConfig = {
+        host: profile.host,
+        port: profile.port,
+        user: profile.user,
+        password: profile.password,
+        database: profile.database,
+      };
+      
+      this.mysqlConnection.updateConfig(newConfig);
+      this.configManager.updateMySQLConfig(newConfig);
+      
+      // 接続実行
+      await this.mysqlConnection.connect();
+      
+      return {
+        success: true,
+        connection: this.mysqlConnection.getConnectionInfo(),
+        profileName: profile.name
+      };
+    } catch (error) {
+      console.error('Failed to connect by profile:', error);
+      throw new Error(`プロファイル接続失敗: ${(error as Error).message}`);
     }
   }
   
@@ -444,11 +589,118 @@ export class MCPServer {
    * 接続状態取得ツール
    */
   private async getConnectionStatus(): Promise<any> {
+    // 現在の接続情報を取得
+    const connectionInfo = this.mysqlConnection.isConnectedToDatabase()
+      ? this.mysqlConnection.getConnectionInfo()
+      : null;
+    
+    // 現在使用中のプロファイル名を特定（あれば）
+    let currentProfileName: string | null = null;
+    if (connectionInfo) {
+      const profiles = this.configManager.getStoredConnections();
+      const currentProfile = profiles.find(p => 
+        p.host === connectionInfo.host &&
+        p.port === connectionInfo.port &&
+        p.user === connectionInfo.user &&
+        p.database === connectionInfo.database
+      );
+      
+      if (currentProfile) {
+        currentProfileName = currentProfile.name;
+      }
+    }
+    
     return {
       isConnected: this.mysqlConnection.isConnectedToDatabase(),
-      connectionInfo: this.mysqlConnection.isConnectedToDatabase()
-        ? this.mysqlConnection.getConnectionInfo()
-        : null
+      connectionInfo: connectionInfo,
+      currentProfileName: currentProfileName
+    };
+  }
+  
+  /**
+   * プロファイル一覧取得ツール
+   */
+  private async listProfiles(): Promise<any> {
+    const profiles = this.configManager.getStoredConnections();
+    return {
+      profiles: profiles.map(p => ({
+        name: p.name,
+        host: p.host,
+        port: p.port,
+        user: p.user,
+        database: p.database || null
+      }))
+    };
+  }
+  
+  /**
+   * プロファイル取得ツール
+   */
+  private async getProfile(args: Record<string, any>): Promise<any> {
+    const { profileName } = args as { profileName: string };
+    
+    const profile = this.configManager.getProfile(profileName);
+    if (!profile) {
+      throw new Error(`プロファイル "${profileName}" が見つかりません`);
+    }
+    
+    return {
+      profile: {
+        name: profile.name,
+        host: profile.host,
+        port: profile.port,
+        user: profile.user,
+        database: profile.database || null
+      }
+    };
+  }
+  
+  /**
+   * プロファイル追加ツール
+   */
+  private async addProfile(args: Record<string, any>): Promise<any> {
+    const { profileName, host, port, user, password, database } = args as {
+      profileName: string;
+      host: string;
+      port: number;
+      user: string;
+      password?: string;
+      database?: string;
+    };
+    
+    const newProfile: NamedStoredConnection = {
+      name: profileName,
+      host,
+      port,
+      user,
+      password: password || '',
+      database
+    };
+    
+    // 一時的に設定を更新して保存
+    const originalConfig = { ...this.configManager.getMySQLConfig() };
+    this.configManager.updateMySQLConfig(newProfile);
+    const savedName = this.configManager.saveCurrentConnection(profileName);
+    
+    // 元の設定に戻す（現在の接続には影響させない）
+    this.configManager.updateMySQLConfig(originalConfig);
+    
+    return {
+      success: true,
+      profileName: savedName
+    };
+  }
+  
+  /**
+   * プロファイル削除ツール
+   */
+  private async removeProfile(args: Record<string, any>): Promise<any> {
+    const { profileName } = args as { profileName: string };
+    
+    const result = this.configManager.removeProfile(profileName);
+    return {
+      success: result,
+      message: result ? `プロファイル "${profileName}" を削除しました` : `プロファイル "${profileName}" は存在しません`
     };
   }
 

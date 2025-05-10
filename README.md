@@ -13,6 +13,7 @@ MySQL Model Context Protocol（MCP）サーバーは、ローカル環境のMySQ
 - **データベース情報の取得**: データベース一覧、テーブル一覧、テーブル構造の確認
 - **MCP準拠**: Model Context Protocol に対応し、LLMと統合可能
 - **stdio通信**: 標準入出力を使用してLLMと通信、ポートバインドなし
+- **接続プロファイル管理**: 複数の接続設定をプロファイル名で管理し切り替え
 - **接続情報の保存**: データベース接続情報をローカルに保存し再利用
 
 ## インストールと使用方法
@@ -42,14 +43,17 @@ MySQL Model Context Protocol（MCP）サーバーは、ローカル環境のMySQ
 
 ### 接続情報の保存と再利用
 
-MySQL MCP Serverは、正常に接続したデータベースの情報をローカルに保存します。これにより、次回の起動時に接続情報を自動的に再利用できます。保存された接続情報は、ユーザーのホームディレクトリにある `.mysql-mcp-connections.json` ファイルに保存されます。
+MySQL MCP Serverは、正常に接続したデータベースの情報を名前付きプロファイルとしてローカルに保存します。これにより、次回の起動時に接続情報を名前で指定して再利用できます。保存された接続情報は、ユーザーのホームディレクトリにある `.mysql-mcp-connections.json` ファイルに保存されます。
 
-接続情報には以下が含まれます：
+各接続プロファイルには以下が含まれます：
+- プロファイル名
 - ホスト名
 - ポート番号
 - ユーザー名
 - パスワード
 - データベース名（設定されている場合）
+
+複数のデータベース接続をプロファイル名で管理し、簡単に切り替えることが可能です。
 
 ### 設定ファイルの使用
 
@@ -101,8 +105,18 @@ MySQL MCP ServerはMCP (Model Context Protocol) に準拠した「stdio」モー
 | ツール名 | 説明 | 必須パラメータ |
 |---------|------|-------------|
 | connect_database | データベースに接続します | host, port, user |
+| connect_by_profile | 保存済みプロファイル名で接続します | profileName |
 | disconnect_database | 現在のデータベース接続を切断します | なし |
 | get_connection_status | データベース接続の状態を取得します | なし |
+
+### 接続プロファイル管理
+
+| ツール名 | 説明 | 必須パラメータ |
+|---------|------|-------------|
+| list_profiles | 保存済みのプロファイル一覧を取得します | なし |
+| get_profile | プロファイルの詳細を取得します | profileName |
+| add_profile | 新しいプロファイルを追加します | profileName, host, port, user |
+| remove_profile | プロファイルを削除します | profileName |
 
 ### SQLクエリ操作
 
@@ -128,7 +142,7 @@ MySQL MCP Serverでは、サーバーの起動とデータベース接続を分�
    npx -y https://github.com/yuki777/mysql-mcp-server
    ```
 
-2. **接続ツールを使用してデータベースに接続**:
+2. **接続ツールを使用してデータベースに接続（プロファイル名を指定して保存）**:
    ```json
    {
      "type": "tool_call",
@@ -139,26 +153,66 @@ MySQL MCP Serverでは、サーバーの起動とデータベース接続を分�
        "port": 3306,
        "user": "root",
        "password": "your_password",
-       "database": "your_db"
+       "database": "your_db",
+       "profileName": "my-db"
      }
    }
    ```
 
-3. **接続状態の確認**:
+3. **プロファイル一覧の取得**:
    ```json
    {
      "type": "tool_call",
      "request_id": "req_2",
+     "tool": "list_profiles",
+     "arguments": {}
+   }
+   ```
+
+4. **プロファイル名で接続**:
+   ```json
+   {
+     "type": "tool_call",
+     "request_id": "req_3",
+     "tool": "connect_by_profile",
+     "arguments": {
+       "profileName": "my-db"
+     }
+   }
+   ```
+   
+5. **新しいプロファイルの追加（接続は行わない）**:
+   ```json
+   {
+     "type": "tool_call",
+     "request_id": "req_4",
+     "tool": "add_profile",
+     "arguments": {
+       "profileName": "production-db",
+       "host": "prod.example.com",
+       "port": 3306,
+       "user": "prod_user",
+       "password": "prod_password",
+       "database": "production"
+     }
+   }
+   ```
+
+6. **接続状態の確認**:
+   ```json
+   {
+     "type": "tool_call",
+     "request_id": "req_5",
      "tool": "get_connection_status",
      "arguments": {}
    }
    ```
 
-4. **接続の切断**:
+7. **接続の切断**:
    ```json
    {
      "type": "tool_call",
-     "request_id": "req_3",
+     "request_id": "req_6",
      "tool": "disconnect_database",
      "arguments": {}
    }

@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { AppConfig, MySQLConfig, StoredConnection } from '../core/types';
+import { AppConfig, MySQLConfig, StoredConnection, NamedStoredConnection } from '../core/types';
 import { CONFIG_FILES, DEFAULT_VALUES, ENV_VARS } from './constants';
 
 /**
@@ -9,7 +9,7 @@ import { CONFIG_FILES, DEFAULT_VALUES, ENV_VARS } from './constants';
 export class ConfigManager {
   private config: AppConfig;
   private configFilePath?: string;
-  private connections: StoredConnection[] = [];
+  private connections: NamedStoredConnection[] = [];
   private connectionsFilePath: string;
 
   /**
@@ -116,13 +116,27 @@ export class ConfigManager {
     try {
       if (fs.existsSync(this.connectionsFilePath)) {
         const connectionsData = fs.readFileSync(this.connectionsFilePath, 'utf8');
-        this.connections = JSON.parse(connectionsData);
+        const loadedConnections = JSON.parse(connectionsData);
+        
+        // 旧形式の接続情報（名前なし）を新形式に変換
+        this.connections = loadedConnections.map((conn: any) => {
+          // 既に新形式（名前付き）の場合はそのまま使用
+          if (conn.name) {
+            return conn as NamedStoredConnection;
+          }
+          
+          // 旧形式の場合、ホスト名とポートから名前を生成
+          return {
+            ...conn,
+            name: `${conn.host}-${conn.port}`
+          } as NamedStoredConnection;
+        });
         
         // 最後の接続情報を現在の設定として適用（存在する場合）
         if (this.connections.length > 0) {
           const lastConnection = this.connections[this.connections.length - 1];
           this.config.mysql = { ...this.config.mysql, ...lastConnection };
-          console.error(`前回の接続情報を読み込みました: ${lastConnection.host}:${lastConnection.port}`);
+          console.error(`前回の接続情報を読み込みました: ${lastConnection.name} (${lastConnection.host}:${lastConnection.port})`);
         }
       }
     } catch (error) {
@@ -132,11 +146,17 @@ export class ConfigManager {
 
   /**
    * 現在の接続情報を保存
+   * @param profileName 保存するプロファイル名（指定がない場合は自動生成）
+   * @returns 保存したプロファイル名
    */
-  public saveCurrentConnection(): void {
+  public saveCurrentConnection(profileName?: string): string {
     try {
+      // プロファイル名が指定されていない場合は、ホスト名とポートから生成
+      const name = profileName || `${this.config.mysql.host}-${this.config.mysql.port}`;
+      
       // 現在の接続情報を取得
-      const currentConnection: StoredConnection = {
+      const currentConnection: NamedStoredConnection = {
+        name: name,
         host: this.config.mysql.host,
         port: this.config.mysql.port,
         user: this.config.mysql.user,
@@ -144,28 +164,72 @@ export class ConfigManager {
         database: this.config.mysql.database
       };
 
-      // 同一の接続情報が既に存在するか確認
-      const existingIndex = this.connections.findIndex(conn => 
+      // 同じ名前のプロファイルが既に存在するか確認
+      const existingNameIndex = this.connections.findIndex(conn => conn.name === name);
+      
+      // 同一の接続情報（ホスト、ポート、ユーザー、パスワード、DB）が既に存在するか確認
+      const existingConnectionIndex = this.connections.findIndex(conn => 
         conn.host === currentConnection.host && 
         conn.port === currentConnection.port && 
         conn.user === currentConnection.user && 
         conn.password === currentConnection.password && 
-        conn.database === currentConnection.database
+        conn.database === currentConnection.database &&
+        conn.name !== name // 名前が異なる場合
       );
 
-      // 既存の接続情報を更新または新規追加
-      if (existingIndex >= 0) {
-        this.connections[existingIndex] = currentConnection;
-      } else {
+      // 既存のプロファイルを更新または新規追加
+      if (existingNameIndex >= 0) {
+        // 同じ名前のプロファイルを更新
+        this.connections[existingNameIndex] = currentConnection;
+        console.error(`既存のプロファイル "${name}" を更新しました`);
+      } else if (existingConnectionIndex >= 0) {
+        // 同じ接続情報が異なる名前で存在する場合
+        console.error(`警告: 同じ接続情報が "${this.connections[existingConnectionIndex].name}" として既に存在します`);
         this.connections.push(currentConnection);
+      } else {
+        // 新規プロファイルとして追加
+        this.connections.push(currentConnection);
+        console.error(`新しいプロファイル "${name}" を追加しました`);
       }
 
       // ファイルに保存
       fs.writeFileSync(this.connectionsFilePath, JSON.stringify(this.connections, null, 2));
       console.error(`接続情報を保存しました: ${this.connectionsFilePath}`);
+      
+      return name;
     } catch (error) {
       console.error('接続情報の保存エラー:', error);
+      return '';
     }
+  }
+  
+  /**
+   * 指定した名前のプロファイルを取得
+   * @param profileName プロファイル名
+   * @returns 接続情報（存在しない場合はnull）
+   */
+  public getProfile(profileName: string): NamedStoredConnection | null {
+    const profile = this.connections.find(conn => conn.name === profileName);
+    return profile || null;
+  }
+  
+  /**
+   * 指定した名前のプロファイルを削除
+   * @param profileName 削除するプロファイル名
+   * @returns 削除が成功したかどうか
+   */
+  public removeProfile(profileName: string): boolean {
+    const initialLength = this.connections.length;
+    this.connections = this.connections.filter(conn => conn.name !== profileName);
+    
+    if (initialLength !== this.connections.length) {
+      // 変更があった場合のみファイルに保存
+      fs.writeFileSync(this.connectionsFilePath, JSON.stringify(this.connections, null, 2));
+      console.error(`プロファイル "${profileName}" を削除しました`);
+      return true;
+    }
+    
+    return false;
   }
 
   /**
@@ -340,9 +404,18 @@ export class ConfigManager {
 
   /**
    * 保存済み接続情報の一覧を取得
+   * @returns 名前付き接続情報の配列
    */
-  public getStoredConnections(): StoredConnection[] {
+  public getStoredConnections(): NamedStoredConnection[] {
     return this.connections;
+  }
+  
+  /**
+   * 接続プロファイル名の一覧を取得
+   * @returns プロファイル名の配列
+   */
+  public getProfileNames(): string[] {
+    return this.connections.map(conn => conn.name);
   }
 
   /**

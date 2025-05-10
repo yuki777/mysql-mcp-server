@@ -5,6 +5,7 @@
  * 
  * このスクリプトは、MCPサーバーを起動し、接続管理ツールを使って
  * データベースへの接続、切断、接続状態の確認などの操作をテストします。
+ * また、接続プロファイル管理の機能もテストします。
  * 
  * 使用方法：
  * node test-connection-management.js
@@ -57,13 +58,14 @@ async function runTests() {
   await delay(500);
   
   // 3. データベースに接続
-  console.log('\n=== テスト 3: データベースに接続 ===');
+  console.log('\n=== テスト 3: データベースに接続（プロファイル名指定） ===');
   server.sendRequest('connect_database', {
     host: 'localhost',
     port: 13306, // プロジェクトのデフォルトMySQLポート
     user: 'root',
     password: '',
-    database: 'mysql' // 標準データベース
+    database: 'mysql', // 標準データベース
+    profileName: 'test-mysql' // プロファイル名を指定
   });
   await delay(1000);
   
@@ -94,13 +96,63 @@ async function runTests() {
     port: 13306,
     user: 'root',
     password: '',
-    database: 'information_schema' // 別のデータベース
+    database: 'information_schema', // 別のデータベース
+    profileName: 'test-info-schema'
   });
   await delay(1000);
   
   // 9. テーブル一覧取得（別データベース）
   console.log('\n=== テスト 9: テーブル一覧の取得 ===');
   server.sendRequest('get_tables');
+  await delay(500);
+
+  // === プロファイル管理のテスト ===
+  
+  // 10. プロファイル一覧の取得
+  console.log('\n=== テスト 10: プロファイル一覧の取得 ===');
+  server.sendRequest('list_profiles');
+  await delay(500);
+  
+  // 11. 新しいプロファイルの追加
+  console.log('\n=== テスト 11: 新しいプロファイルの追加 ===');
+  server.sendRequest('add_profile', {
+    profileName: 'test-profile',
+    host: 'localhost',
+    port: 13306,
+    user: 'root',
+    password: '',
+    database: 'test'
+  });
+  await delay(500);
+  
+  // 12. 特定のプロファイルの詳細取得
+  console.log('\n=== テスト 12: プロファイル詳細の取得 ===');
+  server.sendRequest('get_profile', { profileName: 'test-profile' });
+  await delay(500);
+  
+  // 13. プロファイル名を指定して接続
+  console.log('\n=== テスト 13: プロファイル名で接続 ===');
+  server.sendRequest('connect_by_profile', { profileName: 'test-mysql' });
+  await delay(1000);
+  
+  // 14. 接続状態の確認（プロファイル接続後）
+  console.log('\n=== テスト 14: 接続状態の確認（プロファイル接続後）===');
+  server.sendRequest('get_connection_status');
+  await delay(500);
+  
+  // 15. 存在しないプロファイル名で接続（エラー）
+  console.log('\n=== テスト 15: 存在しないプロファイルで接続（エラー） ===');
+  server.sendRequest('connect_by_profile', { profileName: 'non-existent-profile' });
+  await delay(500);
+  
+  // 16. プロファイルの削除
+  console.log('\n=== テスト 16: プロファイルの削除 ===');
+  server.sendRequest('remove_profile', { profileName: 'test-profile' });
+  await delay(500);
+  
+  // 17. プロファイル一覧の再取得（削除後）
+  console.log('\n=== テスト 17: プロファイル一覧の再取得（削除後） ===');
+  server.sendRequest('list_profiles');
   await delay(500);
 
   console.log('\n\nすべてのテストが完了しました。5秒後に終了します...');
@@ -206,11 +258,20 @@ function checkIfExpectedError(errorMessage) {
     'Query execution failed: Database not connected',
     'Empty query',
     'Invalid query',
-    'Missing required parameter'
+    'Missing required parameter',
+    'プロファイル ".+" が見つかりません',
+    'プロファイル接続失敗'
   ];
   
   // エラーメッセージに想定内のものが含まれているかチェック
-  return expectedErrors.some(expected => errorMessage.includes(expected));
+  return expectedErrors.some(expected => {
+    if (expected.includes('+')) {
+      // 正規表現パターンの場合
+      const regex = new RegExp(expected);
+      return regex.test(errorMessage);
+    }
+    return errorMessage.includes(expected);
+  });
 }
 
 // 終了処理

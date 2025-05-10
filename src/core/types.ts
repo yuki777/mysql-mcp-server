@@ -63,6 +63,11 @@ export interface StoredConnection {
   database?: string;
 }
 
+// 名前付き接続情報の型定義
+export interface NamedStoredConnection extends StoredConnection {
+  name: string;  // プロファイル名
+}
+
 export interface QueryResult {
   data: any[];
   fields?: any[];
