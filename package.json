@@ -1,15 +1,14 @@
 {
   "name": "mysql-mcp-server",
   "version": "1.0.0",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "build/index.js",
   "type": "module",
   "bin": {
-    "mysql-mcp-server": "dist/cli/cli.js"
+    "mysql-mcp-server": "build/cli/cli.js"
   },
   "scripts": {
-    "build": "tsc && chmod +x dist/cli/cli.js",
-    "start": "node dist/cli/cli.js",
+    "build": "tsc && chmod +x build/cli/cli.js",
+    "start": "node build/cli/cli.js",
     "dev": "nodemon --watch src --exec ts-node src/cli/cli.ts",
     "prepare": "npm run build"
   },
