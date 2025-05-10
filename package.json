@@ -23,7 +23,7 @@
   "license": "ISC",
   "description": "MySQL Model Context Protocol (MCP) Server for executing SQL queries",
   "files": [
-    "dist",
+    "build",
     "README.md"
   ],
   "engines": {
