@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
-import { AppConfig, MySQLConfig, StoredConnection, NamedStoredConnection } from '../core/types';
-import { CONFIG_FILES, DEFAULT_VALUES, ENV_VARS } from './constants';
+import { AppConfig, MySQLConfig, StoredConnection, NamedStoredConnection } from '../core/types.js';
+import { CONFIG_FILES, DEFAULT_VALUES, ENV_VARS } from './constants.js';
 
 /**
  * アプリケーション設定を管理するクラス

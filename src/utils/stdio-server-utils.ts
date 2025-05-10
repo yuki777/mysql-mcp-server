@@ -1,5 +1,5 @@
-import { MCPServer } from '../core/mcp-server';
-import { MCPToolRequest, MCPToolResponse, MCPResourceRequest, MCPResourceResponse } from '../core/types';
+import { MCPServer } from '../core/mcp-server.js';
+import { MCPToolRequest, MCPToolResponse, MCPResourceRequest, MCPResourceResponse } from '../core/types.js';
 
 /**
  * stdio を使用したMCPサーバーを起動

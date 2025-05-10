@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
 import { program } from 'commander';
-import { ConfigManager } from '../config/config';
-import { MCPServer } from '../core/mcp-server';
-import { startStdioMCPServer } from '../utils/stdio-server-utils';
+import { ConfigManager } from '../config/config.js';
+import { MCPServer } from '../core/mcp-server.js';
+import { startStdioMCPServer } from '../utils/stdio-server-utils.js';
 import fs from 'fs';
 import path from 'path';
 

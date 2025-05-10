@@ -1,5 +1,5 @@
 import mysql, { Pool, PoolConnection, PoolOptions, SslOptions, RowDataPacket, OkPacket, ResultSetHeader } from 'mysql2/promise';
-import { MySQLConfig, QueryResult } from '../core/types';
+import { MySQLConfig, QueryResult } from '../core/types.js';
 
 /**
  * MySQLデータベース接続を管理するクラス

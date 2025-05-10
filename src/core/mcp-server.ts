@@ -1,6 +1,6 @@
-import { MCPServerDefinition, MCPToolDefinition, MCPResourceDefinition, MCPToolRequest, MCPToolResponse, MySQLConfig, NamedStoredConnection } from './types';
-import { ConfigManager } from '../config/config';
-import { MySQLConnection } from '../mysql/connection';
+import { MCPServerDefinition, MCPToolDefinition, MCPResourceDefinition, MCPToolRequest, MCPToolResponse, MySQLConfig, NamedStoredConnection } from './types.js';
+import { ConfigManager } from '../config/config.js';
+import { MySQLConnection } from '../mysql/connection.js';
 
 /**
  * MCP サーバーのメインクラス

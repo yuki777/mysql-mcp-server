@@ -1,6 +1,6 @@
-import { ConfigManager } from './config/config';
-import { MCPServer } from './core/mcp-server';
-import { startMCPServer } from './utils/server-utils';
+import { ConfigManager } from './config/config.js';
+import { MCPServer } from './core/mcp-server.js';
+import { startMCPServer } from './utils/server-utils.js';
 
 /**
  * アプリケーションのメインエントリーポイント

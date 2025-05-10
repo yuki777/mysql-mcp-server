@@ -2,8 +2,8 @@ import express from 'express';
 import { Application, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import bodyParser from 'body-parser';
-import { MCPServer } from '../../core/mcp-server';
-import { MCPToolRequest, MCPToolResponse, MCPResourceRequest, MCPResourceResponse } from '../../core/types';
+import { MCPServer } from '../../core/mcp-server.js';
+import { MCPToolRequest, MCPToolResponse, MCPResourceRequest, MCPResourceResponse } from '../../core/types.js';
 
 /**
  * MCP サーバーを起動

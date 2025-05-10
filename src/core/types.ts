@@ -1,6 +1,7 @@
 /**
  * MySQL MCP Server の型定義
  */
+// ESモジュールでの型定義
 
 // MCP Protocol の基本型定義
 export interface MCPToolDefinition {
